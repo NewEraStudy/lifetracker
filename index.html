@@ -422,7 +422,7 @@ function MiniBar({ label, done, total, color }) {
 /* ─────────────────────────────────────────────────────────────────
    APP
 ───────────────────────────────────────────────────────────────── */
-export default function App() {
+function App() {
   const [tasks,    setTasks]    = useState({});
   const [loaded,   setLoaded]   = useState(false);
   const [selDate,  setSelDate]  = useState(() => { const d=new Date(); d.setHours(0,0,0,0); return d; });

@@ -1,0 +1,988 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Ayush · 90-Day Tracker</title>
+  <link rel="icon" type="image/svg+xml" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='85'>⚡</text></svg>">
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Cormorant+Garamond:ital,wght@0,300;0,400;0,600;1,300;1,400&family=DM+Mono:wght@300;400;500&family=Syne:wght@400;500;600;700;800&display=swap" rel="stylesheet">
+  <style>
+    :root {
+      --bg:      #080810;
+      --bg2:     #0e0e1a;
+      --bg3:     #141422;
+      --border:  rgba(255,255,255,0.07);
+      --text:    #e4e4f0;
+      --muted:   #5a5a72;
+      --gold:    #f0c040;
+      --gold2:   #c89820;
+      --health:  #4ade80;
+      --love:    #fb7185;
+      --happy:   #fbbf24;
+      --money:   #38bdf8;
+      --h-bg: rgba(74,222,128,0.08);  --h-b: rgba(74,222,128,0.22);
+      --l-bg: rgba(251,113,133,0.08); --l-b: rgba(251,113,133,0.22);
+      --a-bg: rgba(251,191,36,0.08);  --a-b: rgba(251,191,36,0.22);
+      --m-bg: rgba(56,189,248,0.08);  --m-b: rgba(56,189,248,0.22);
+    }
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+    html, body { height: 100%; }
+    body { background: var(--bg); color: var(--text); font-family: 'Syne', sans-serif; overflow-x: hidden; }
+    ::-webkit-scrollbar { width: 3px; } ::-webkit-scrollbar-track { background: transparent; }
+    ::-webkit-scrollbar-thumb { background: rgba(255,255,255,0.1); border-radius: 4px; }
+    button { font-family: 'Syne', sans-serif; cursor: pointer; }
+    input { font-family: 'Syne', sans-serif; }
+    @keyframes fadeUp   { from { opacity:0; transform:translateY(12px); } to { opacity:1; transform:translateY(0); } }
+    @keyframes fadeIn   { from { opacity:0; } to { opacity:1; } }
+    @keyframes toastIn  { from { opacity:0; transform:translateX(-50%) translateY(16px); } to { opacity:1; transform:translateX(-50%) translateY(0); } }
+    @keyframes pulse2   { 0%,100%{opacity:1;} 50%{opacity:.5;} }
+    @keyframes shimmer  { 0%{background-position:-400px 0;} 100%{background-position:400px 0;} }
+    .fade-up { animation: fadeUp .3s cubic-bezier(.4,0,.2,1) both; }
+    .fade-in { animation: fadeIn .25s ease both; }
+  </style>
+</head>
+<body>
+<div id="root">
+  <div style="height:100vh;display:flex;align-items:center;justify-content:center;flex-direction:column;gap:16px;">
+    <div style="font-family:'Cormorant Garamond',serif;font-size:32px;color:var(--gold);font-style:italic;">Ayush</div>
+    <div style="font-family:'DM Mono',monospace;font-size:11px;color:var(--muted);letter-spacing:3px;text-transform:uppercase;animation:pulse2 1.5s ease infinite;">Loading tracker…</div>
+  </div>
+</div>
+
+<script src="https://unpkg.com/react@18/umd/react.production.min.js" crossorigin></script>
+<script src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js" crossorigin></script>
+<script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
+
+<script type="text/babel">
+const { useState, useEffect, useRef, useCallback, useMemo } = React;
+
+/* ─────────────────────────────────────────────────────────────────
+   CONSTANTS
+───────────────────────────────────────────────────────────────── */
+const CATEGORIES = [
+  { id:'health',    label:'Health',    emoji:'💪', color:'var(--health)', bg:'var(--h-bg)', border:'var(--h-b)' },
+  { id:'love',      label:'Love',      emoji:'❤️', color:'var(--love)',   bg:'var(--l-bg)', border:'var(--l-b)' },
+  { id:'happiness', label:'Happiness', emoji:'✨', color:'var(--happy)',  bg:'var(--a-bg)', border:'var(--a-b)' },
+  { id:'money',     label:'Money',     emoji:'💰', color:'var(--money)',  bg:'var(--m-bg)', border:'var(--m-b)' },
+];
+const CAT_MAP = Object.fromEntries(CATEGORIES.map(c=>[c.id,c]));
+const DAYS  = ['Sun','Mon','Tue','Wed','Thu','Fri','Sat'];
+const MONTHS= ['January','February','March','April','May','June','July','August','September','October','November','December'];
+const PLAN_START = new Date(2026,2,9);   // March 9 2026
+const PLAN_END   = new Date(2026,5,8);   // June  8 2026
+
+/* ─────────────────────────────────────────────────────────────────
+   SEED DATA — All 3-Month Plan Tasks
+───────────────────────────────────────────────────────────────── */
+const WEEK_SPECIFIC = {
+  1: {
+    MON:[{cat:'health',   text:'📋 W1 Start: Log baseline weight for every exercise today'},
+         {cat:'money',    text:'📋 W1 Start: Set up profit tracking spreadsheet — target 10M MNT/month'}],
+    TUE:[{cat:'health',   text:'📋 W1: Replace ALL sugary drinks with water or green tea this week'},
+         {cat:'love',     text:'📋 W1: Active listening — repeat back what people say in every convo'}],
+    WED:[{cat:'happiness',text:'📋 W1: Map ALL A-Level exam topics into a master study schedule'},
+         {cat:'money',    text:'📋 W1: Research 5 local Mongolian businesses that could use AI automation'}],
+    THU:[{cat:'love',     text:'📋 W1: Learn G, C, D chord shapes — practice switching for 15 min'},
+         {cat:'happiness',text:'📋 W1: Create Shanghai trip mood board (Pinterest or paper)'}],
+    FRI:[{cat:'money',    text:'📋 W1: Map your Make.com AI workflow — define your core service offer'},
+         {cat:'love',     text:'📋 W1: Send 1 genuine message to a friend or family member today'}],
+    SAT:[{cat:'health',   text:'📋 W1: Take Week 1 progress photo (private — for tracking only)'},
+         {cat:'money',    text:'📋 W1: Research stock brokerage options available in Mongolia'}],
+    SUN:[{cat:'happiness',text:'📋 W1: Write university personal statement DRAFT 1 today'},
+         {cat:'money',    text:'📋 W1: Set Week 2 target: 80 total sales minimum'}],
+  },
+  2: {
+    MON:[{cat:'health',   text:'📋 W2: Increase workout weight 5% from last week — progressive overload'},
+         {cat:'money',    text:'📋 W2: Build first Make.com demo workflow (automation showcase)'}],
+    TUE:[{cat:'health',   text:'📋 W2: Add 20-min walk after school today (dress warm against the cold)'},
+         {cat:'love',     text:'📋 W2: Mirror exercise: say 3 affirmations to yourself every morning this week'}],
+    WED:[{cat:'happiness',text:'📋 W2: Complete 2 full A-Level past papers today (timed, exam conditions)'},
+         {cat:'love',     text:'📋 W2: Do 1 act of kindness for a classmate — no expectation in return'}],
+    THU:[{cat:'money',    text:'📋 W2: Reach out to 5 local businesses via DM or in person today'},
+         {cat:'happiness',text:'📋 W2: Research university admission requirements in detail for 3 schools'}],
+    FRI:[{cat:'love',     text:'📋 W2: Write a letter to yourself — seal it, read it in Month 3'},
+         {cat:'money',    text:'📋 W2: Week 2 review: what worked in business? What needs changing?'}],
+    SAT:[{cat:'happiness',text:'📋 W2: Shanghai trip planning — set a savings goal and target date'},
+         {cat:'health',   text:'📋 W2: Start tracking daily calorie intake — aim 200–300 below maintenance'}],
+    SUN:[{cat:'money',    text:'📋 W2: Sales count check: did you hit 80 this week? If not — diagnose why'},
+         {cat:'love',     text:'📋 W2: Have 1 deep convo today — ask 3 genuine follow-up questions'}],
+  },
+  3: {
+    MON:[{cat:'health',   text:'📋 W3: ⚠️ SUGAR-FREE WEEK STARTS — zero sugar for 7 days straight'},
+         {cat:'health',   text:'📋 W3: Add finisher: 100 push-ups spread across the day'}],
+    TUE:[{cat:'health',   text:'📋 W3: Start 16:8 intermittent fasting — eat between 12 PM and 8 PM only'},
+         {cat:'love',     text:'📋 W3: Guitar: learn your first full song this week (pick one you love)'}],
+    WED:[{cat:'happiness',text:'📋 W3: Complete full A-Level mock exam (self-administered, timed)'},
+         {cat:'money',    text:'📋 W3: Pitch your AI workflow to your first paying prospect'}],
+    THU:[{cat:'love',     text:'📋 W3: Have a 30-min uninterrupted conversation with a parent or sibling'},
+         {cat:'money',    text:'📋 W3: Sales target this week: 100 sales — track daily progress'}],
+    FRI:[{cat:'happiness',text:'📋 W3: Research and shortlist 3 universities you want to apply to'},
+         {cat:'health',   text:'📋 W3: Sugar-free streak check — how many days? Don\'t break it!'}],
+    SAT:[{cat:'happiness',text:'📋 W3: Start saving for Shanghai — open a dedicated savings pocket'},
+         {cat:'love',     text:'📋 W3: Self-love: cook a proper meal for yourself, dress well for yourself'}],
+    SUN:[{cat:'money',    text:'📋 W3: Create your 1-page service offer document for local businesses'},
+         {cat:'happiness',text:'📋 W3: Review Win List from Weeks 1–2 — you\'ve done a lot already'}],
+  },
+  4: {
+    MON:[{cat:'health',   text:'📋 W4: Take full body measurements + photos — compare to Day 1 (Mar 9)'},
+         {cat:'money',    text:'📋 W4: Month 1 financial audit — how close to 10M MNT profit?'}],
+    TUE:[{cat:'love',     text:'📋 W4: Guitar: Can you play 1 full song? If not — identify the gap'},
+         {cat:'happiness',text:'📋 W4: Review A-Level mock — create action plan for each weak topic'}],
+    WED:[{cat:'money',    text:'📋 W4: Total sales count — on track for 1,000 over 3 months?'},
+         {cat:'happiness',text:'📋 W4: University: start formal application if deadline is approaching'}],
+    THU:[{cat:'health',   text:'📋 W4: Add Face Pulls to workout — essential for shoulder health + posture'},
+         {cat:'money',    text:'📋 W4: Reinvest a % of earnings into your best-performing product'}],
+    FRI:[{cat:'love',     text:'📋 W4: Plan a fun activity with a friend or family member this weekend'},
+         {cat:'money',    text:'📋 W4: Plan Month 2 — what is the 1 new business move to add?'}],
+    SAT:[{cat:'health',   text:'📋 W4: Full recovery day — body stretch + foam roll, no heavy lifting'},
+         {cat:'happiness',text:'📋 W4: 🎉 CELEBRATE: Month 1 complete! 95% of people never finish.'}],
+    SUN:[{cat:'happiness',text:'📋 W4: Define Month 2 success criteria across all 4 categories'},
+         {cat:'love',     text:'📋 W4: Re-read Week 1 journal entries — notice your mindset shift'}],
+  },
+  5: {
+    MON:[{cat:'health',   text:'📋 W5: Add progressive overload log — track every set, rep, and weight'},
+         {cat:'money',    text:'📋 W5: Sign first AI workflow client (even at a discounted rate)'}],
+    TUE:[{cat:'love',     text:'📋 W5: Guitar: learn a second song + work on strumming rhythm'},
+         {cat:'money',    text:'📋 W5: Build repeatable outreach system — template DMs + email scripts'}],
+    WED:[{cat:'happiness',text:'📋 W5: A-Level sprint: 3 hours of focused revision today (5–8 PM)'},
+         {cat:'health',   text:'📋 W5: Add 3× weekly: lateral raises + rear delt flies (upper body sculpt)'}],
+    THU:[{cat:'money',    text:'📋 W5: Create 1 piece of high-value content: how AI saves businesses money'},
+         {cat:'happiness',text:'📋 W5: Submit university application if deadline is approaching now'}],
+    FRI:[{cat:'money',    text:'📋 W5: Monthly revenue run rate — on track for 10M MNT this month?'},
+         {cat:'love',     text:'📋 W5: Identify one limiting belief about yourself — write how to overcome it'}],
+    SAT:[{cat:'money',    text:'📋 W5: Review stock portfolio — add to positions or rebalance'},
+         {cat:'health',   text:'📋 W5: Start a 30-day no-sugar streak tracker — chart your progress'}],
+    SUN:[{cat:'happiness',text:'📋 W5: Shanghai trip — book dates if financially ready, or set the exact date'},
+         {cat:'love',     text:'📋 W5: Do something creative just for fun — draw, write, make something'}],
+  },
+  6: {
+    MON:[{cat:'health',   text:'📋 W6: DELOAD WEEK — reduce weight 30%, keep volume, focus on perfect form'},
+         {cat:'money',    text:'📋 W6: Deliver first AI client work + ask for a testimonial/review'}],
+    TUE:[{cat:'love',     text:'📋 W6: Guitar focus week — extend daily practice to 25 min today'},
+         {cat:'love',     text:'📋 W6: Music theory: learn what major vs minor chords are and why they feel different'}],
+    WED:[{cat:'happiness',text:'📋 W6: Full A-Level mock exam today (all subjects, timed, exam conditions)'},
+         {cat:'money',    text:'📋 W6: Build second Make.com workflow — automate a different task type'}],
+    THU:[{cat:'love',     text:'📋 W6: Deep connection: ask a family member about their childhood or dreams'},
+         {cat:'money',    text:'📋 W6: Study: watch 3 videos on sales psychology or business scaling'}],
+    FRI:[{cat:'happiness',text:'📋 W6: Review mock exam results — create a specific action plan per weak area'},
+         {cat:'health',   text:'📋 W6: Max push-up test: 1 set to failure — note the number, beat it in 4 weeks'}],
+    SAT:[{cat:'happiness',text:'📋 W6: Research Shanghai itinerary — where exactly would you go?'},
+         {cat:'health',   text:'📋 W6: Mobility focus: hip flexors, thoracic spine, shoulder flexibility drills'}],
+    SUN:[{cat:'happiness',text:'📋 W6: Happiness audit — which daily habit makes you feel most alive? Do more.'},
+         {cat:'love',     text:'📋 W6: Reach out to someone who got into university — ask for their advice'}],
+  },
+  7: {
+    MON:[{cat:'health',   text:'📋 W7: Return to full intensity — add 10% more weight than Week 5'},
+         {cat:'health',   text:'📋 W7: Upper body supersets — do push-ups between every gym set'}],
+    TUE:[{cat:'love',     text:'📋 W7: 🎸 Perform for 1 person today — face the vulnerability (family/friend)'},
+         {cat:'money',    text:'📋 W7: Close 2nd local business AI client this week'}],
+    WED:[{cat:'love',     text:'📋 W7: Have the hard conversation you\'ve been avoiding — with respect and care'},
+         {cat:'happiness',text:'📋 W7: High-intensity A-Level revision — exams are close, go all in today'}],
+    THU:[{cat:'money',    text:'📋 W7: Create a referral incentive: existing clients who refer = discount or bonus'},
+         {cat:'health',   text:'📋 W7: Cold water after workout = faster recovery + mental toughness'}],
+    FRI:[{cat:'money',    text:'📋 W7: Monthly revenue projection — on track for 10M MNT? Diagnose gaps.'},
+         {cat:'love',     text:'📋 W7: Check on a friend who might be struggling — be the one who reaches out'}],
+    SAT:[{cat:'health',   text:'📋 W7: Body fat visual check — compare to Month 1 photos. Difference visible?'},
+         {cat:'happiness',text:'📋 W7: Find joy OUTSIDE of goals — 1 hour of pure unproductive fun today'}],
+    SUN:[{cat:'love',     text:'📋 W7: Journal: what does loving yourself mean when life is difficult?'},
+         {cat:'money',    text:'📋 W7: Stock market study — read about 1 company\'s fundamentals today'}],
+  },
+  8: {
+    MON:[{cat:'health',   text:'📋 W8: Full body measurements — compare to Month 1: weight, chest, waist, arms'},
+         {cat:'money',    text:'📋 W8: Month 2 financial audit — total sales, profit, client revenue'}],
+    TUE:[{cat:'love',     text:'📋 W8: Guitar: can you play 2 full songs? Aim for 3 by end of Month 3.'},
+         {cat:'happiness',text:'📋 W8: Build A-Level final revision plan — exam is coming soon!'}],
+    WED:[{cat:'money',    text:'📋 W8: Total sales count: at ~650–700? On track for 1,000?'},
+         {cat:'happiness',text:'📋 W8: University news — any acceptances? Follow up if still waiting.'}],
+    THU:[{cat:'health',   text:'📋 W8: Sleep streak review — how consistent has your 10:30 PM been?'},
+         {cat:'love',     text:'📋 W8: Relationship audit — who have you grown closest to in 2 months?'}],
+    FRI:[{cat:'health',   text:'📋 W8: Plan Month 3 training — introduce drop sets or supersets'},
+         {cat:'money',    text:'📋 W8: Stocks 2-month review — what have you learned from market moves?'}],
+    SAT:[{cat:'love',     text:'📋 W8: Re-read your Week 1 journal — who were you then vs. who are you now?'},
+         {cat:'happiness',text:'📋 W8: Write a 2-month reflection letter to yourself'}],
+    SUN:[{cat:'happiness',text:'📋 W8: 🎉 CELEBRATE Month 2! Plan Month 3 goals across all 4 categories.'},
+         {cat:'money',    text:'📋 W8: Plan business Month 3 — you have real momentum now'}],
+  },
+  9: {
+    MON:[{cat:'health',   text:'📋 W9: Introduce DROP SETS — after last set, drop weight 30% and go to failure'},
+         {cat:'money',    text:'📋 W9: Sales blitz this week — target 350 total (50 per day)'}],
+    TUE:[{cat:'love',     text:'📋 W9: 🎸 Push for 3 songs mastered — play for family this week'},
+         {cat:'money',    text:'📋 W9: Launch a limited-time offer on your product/service'}],
+    WED:[{cat:'happiness',text:'📋 W9: A-LEVEL FINAL PREP — complete 1 full timed past paper today'},
+         {cat:'money',    text:'📋 W9: Financial target check — how far from 10M MNT this month?'}],
+    THU:[{cat:'happiness',text:'📋 W9: Create your exam day plan: sleep time, food, travel route, mindset'},
+         {cat:'health',   text:'📋 W9: Reach 8,000 steps today (indoors counts — hallways, stairs)'}],
+    FRI:[{cat:'money',    text:'📋 W9: Document AI workflows — build a visual portfolio to show prospects'},
+         {cat:'health',   text:'📋 W9: Zero cheat meals this week — final push to 10% body fat reduction'}],
+    SAT:[{cat:'love',     text:'📋 W9: Write a heartfelt appreciation message to your parents today'},
+         {cat:'happiness',text:'📋 W9: Shanghai trip — is the booking confirmed? Make it real today.'}],
+    SUN:[{cat:'health',   text:'📋 W9: Protein at every meal — hit 1.6g per kg bodyweight today'},
+         {cat:'love',     text:'📋 W9: Re-read the letter you wrote to yourself in Week 2. You\'ve changed.'}],
+  },
+  10: {
+    MON:[{cat:'health',   text:'📋 W10: EXAM WEEK — reduce workout intensity 20% to conserve mental energy'},
+         {cat:'happiness',text:'📋 W10: Execute exam day plan — sleep 10 PM, eat well, arrive 15 min early'}],
+    TUE:[{cat:'health',   text:'📋 W10: Zero caffeine after 2 PM during exam week — protect sleep quality'},
+         {cat:'love',     text:'📋 W10: Tell your family you have important exams — ask for their support'}],
+    WED:[{cat:'happiness',text:'📋 W10: After each exam — DO NOT discuss answers with classmates. Trust yourself.'},
+         {cat:'health',   text:'📋 W10: 5-min deep breathing before each exam session — lowers cortisol significantly'}],
+    THU:[{cat:'love',     text:'📋 W10: Journal each evening this week — write what you\'re proud of that day'},
+         {cat:'money',    text:'📋 W10: Pre-schedule all social media posts for the week — let automations run'}],
+    FRI:[{cat:'happiness',text:'📋 W10: Allow yourself to feel proud after exams — you have prepared hard'},
+         {cat:'money',    text:'📋 W10: Passive mode: AI workflows run, just check daily numbers'}],
+    SAT:[{cat:'health',   text:'📋 W10: Protein + complex carb breakfast before every exam day'},
+         {cat:'love',     text:'📋 W10: Be kind to yourself this week — you have prepared. Trust it.'}],
+    SUN:[{cat:'happiness',text:'📋 W10: Plan your post-exam celebration — you will earn it'},
+         {cat:'money',    text:'📋 W10: Light business check only — no major launches this exam week'}],
+  },
+  11: {
+    MON:[{cat:'health',   text:'📋 W11: Return to FULL workout intensity — release the post-exam energy!'},
+         {cat:'money',    text:'📋 W11: Sales push — target 400 sales this week to close in on 1,000 total'}],
+    TUE:[{cat:'love',     text:'📋 W11: 🎸 Can you jam freely on any chord? That\'s real guitar progress.'},
+         {cat:'money',    text:'📋 W11: Close 3 new AI workflow clients — you have the time now'}],
+    WED:[{cat:'happiness',text:'📋 W11: 🎉 CELEBRATE finishing A-Level exams — this is a massive achievement!'},
+         {cat:'happiness',text:'📋 W11: University acceptance: check status and follow up confidently'}],
+    THU:[{cat:'health',   text:'📋 W11: Final body measurements + photos — compare to Day 1, March 9!'},
+         {cat:'love',     text:'📋 W11: Plan and execute something special for someone you care about'}],
+    FRI:[{cat:'happiness',text:'📋 W11: Shanghai trip: final booking confirmation — make it officially real!'},
+         {cat:'money',    text:'📋 W11: Monthly revenue final sprint — last push to reach 10M MNT'}],
+    SAT:[{cat:'love',     text:'📋 W11: Celebration dinner with family — thank them for their support'},
+         {cat:'happiness',text:'📋 W11: Write 3-month happiness retrospective: what made you happiest?'}],
+    SUN:[{cat:'health',   text:'📋 W11: Sleep 10:30 PM even after exams — this is now a permanent life habit'},
+         {cat:'love',     text:'📋 W11: Write your final 3-month love letter to yourself: what you learned'}],
+  },
+  12: {
+    MON:[{cat:'health',   text:'📋 W12: Final transformation photo — before (Mar 9) vs now. You earned this.'},
+         {cat:'money',    text:'📋 W12: Full 3-month financial audit — total earnings, profit, growth rate'}],
+    TUE:[{cat:'love',     text:'📋 W12: 🎸 Perform 3 songs for someone you love — give them this gift'},
+         {cat:'happiness',text:'📋 W12: Write your 3-month story: challenges, breakthroughs, lessons learned'}],
+    WED:[{cat:'money',    text:'📋 W12: Total sales counter — 1,000 achieved? If yes, celebrate massively.'},
+         {cat:'money',    text:'📋 W12: Stocks: 3-month portfolio review — what did you learn about investing?'}],
+    THU:[{cat:'love',     text:'📋 W12: Read all journal entries from Mar 9 onward — see your full growth arc'},
+         {cat:'money',    text:'📋 W12: AI service check — what is your monthly recurring revenue now?'}],
+    FRI:[{cat:'health',   text:'📋 W12: Design next 3-month workout plan — what is the next level?'},
+         {cat:'happiness',text:'📋 W12: Begin planning your next 3-month chapter of transformation'}],
+    SAT:[{cat:'love',     text:'📋 W12: Write 3 letters: to past self (Mar 9), to someone you love, to future you'},
+         {cat:'happiness',text:'📋 W12: University update — accepted: celebrate. Not yet: reapply with confidence.'}],
+    SUN:[{cat:'money',    text:'📋 W12: Plan: how do you scale to 20M MNT in the next quarter?'},
+         {cat:'love',     text:'📋 W12: Name 3 people who\'ve told you you\'re a better listener. Real growth.'}],
+  },
+  13: {
+    MON:[{cat:'money',    text:'🏆 W13: FINAL TALLY — total sales, total profit, AI clients, stock portfolio'},
+         {cat:'health',   text:'🏆 W13: 10% body fat reduction achieved? Every % earned is real progress.'}],
+    TUE:[{cat:'love',     text:'🏆 W13: Do one meaningful thing for someone without telling anyone'},
+         {cat:'happiness',text:'🏆 W13: University accepted? Celebrate massively. Not yet? Stay confident.'}],
+    WED:[{cat:'money',    text:'🏆 W13: Reinvest 30% of all earnings into the next phase of growth'},
+         {cat:'love',     text:'🏆 W13: Guitar: how far have you come from Week 1\'s stumbling G-C-D?'}],
+    THU:[{cat:'happiness',text:'🏆 W13: List 10 things that make you happy TODAY that you didn\'t have on Mar 9'},
+         {cat:'money',    text:'🏆 W13: Write your business thesis: what model scales you from here?'}],
+    FRI:[{cat:'money',    text:'🏆 W13: Share your results — what you built in 90 days as a full-time student'},
+         {cat:'health',   text:'🏆 W13: 10:30 PM bedtime is now a life habit forever — protect it always'}],
+    SAT:[{cat:'happiness',text:'🏆 W13: Design your next 3-month chapter — it starts now'},
+         {cat:'love',     text:'🏆 W13: Self-love check: do you love yourself more than March 9? That was the goal.'}],
+    SUN:[{cat:'happiness',text:'🏆 90 DAYS COMPLETE — You are unrecognizable from March 9. That was the goal.'},
+         {cat:'love',     text:'🏆 W13: Read every journal entry start to finish. You showed up every single day.'}],
+  },
+};
+
+/* ─────────────────────────────────────────────────────────────────
+   UTILITY FUNCTIONS
+───────────────────────────────────────────────────────────────── */
+const toKey = d => `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}-${String(d.getDate()).padStart(2,'0')}`;
+const today = new Date(); today.setHours(0,0,0,0);
+
+function getWeekNum(date) {
+  const d = new Date(date); d.setHours(0,0,0,0);
+  const diff = Math.floor((d - PLAN_START) / 86400000);
+  if (diff < 0 || diff > 91) return null;
+  return Math.min(Math.floor(diff / 7) + 1, 13);
+}
+const DOW_KEY = ['SUN','MON','TUE','WED','THU','FRI','SAT'];
+
+function generateSeedTasks(date) {
+  const d = new Date(date); d.setHours(0,0,0,0);
+  const weekNum = getWeekNum(d);
+  if (!weekNum) return [];
+  const dow = d.getDay();
+  const dk  = DOW_KEY[dow];
+  const tasks = [];
+  let n = 0;
+  const add = (cat, text) => tasks.push({ id:`s-${toKey(d)}-${n++}`, text, cat, done:false });
+
+  // ── Daily (every day) ──
+  add('health',   '🌅 Wake up 5:30 AM — cold splash, no phone for 10 min');
+  add('love',     '🎸 Guitar practice 15 min (7:20–7:35 AM)');
+  add('love',     '📓 Journal: 3 things proud of + 1 daily intention (7:35–7:45 AM)');
+  add('health',   '🥚 High-protein breakfast (eggs + meat) — zero sugar');
+  add('health',   '💧 Drink 3L water today');
+  add('money',    '📊 Check daily sales count + update profit tracker');
+  add('health',   '😴 In bed by 10:30 PM — phone on airplane mode across the room');
+
+  // ── Day-of-week ──
+  if (dow === 1) {
+    add('health',   '💪 Push Day: Chest · Shoulders · Triceps (after school, 3–4 PM)');
+    add('happiness','📖 A-Level Study: Math + Physics (6–8 PM — timed past papers)');
+    add('money',    '💰 Business: prospect 5 local businesses + review weekly targets (4:15–6 PM)');
+    add('love',     '❤️ Family time — no phone, active listening (8–8:30 PM)');
+  }
+  if (dow === 2) {
+    add('health',   '💪 Pull Day: Back · Biceps (after Rubik Club, ~5:30 PM)');
+    add('happiness','📖 A-Level Study: Chemistry + Math (7:30–9 PM)');
+    add('money',    '💰 Business: Build Make.com automation + send DMs (after school)');
+    add('love',     '❤️ Family time after clubs — active listening (9–9:30 PM)');
+  }
+  if (dow === 3) {
+    add('health',   '💪 Legs + Core: Squats · RDLs · Planks (after school, 12:30–1:30 PM)');
+    add('happiness','📖 A-Level Study: Physics + Weak Subjects (4:30–7 PM — longest block)');
+    add('money',    '💰 Business deep build: workflows, pitch prep, portfolio (2–4 PM)');
+    add('love',     '❤️ Family time (7–7:30 PM)');
+  }
+  if (dow === 4) {
+    add('health',   '💪 Push Day (Upper Body Focus): Incline · OHP · Triceps (2–3 PM)');
+    add('happiness','📖 A-Level Study: All Subjects Rotation (5–7 PM)');
+    add('money',    '💰 Business: follow up clients + financials + stocks check (3:15–5 PM)');
+    add('love',     '❤️ Family time (8–8:30 PM)');
+  }
+  if (dow === 5) {
+    add('health',   '💪 Pull Day: Back · Biceps · Shrugs (after school, 2–3 PM)');
+    add('happiness','📖 A-Level Study: Fix this week\'s biggest weak topic (5–7 PM)');
+    add('money',    '💰 Business: week review — sales total, profit, leads. Plan next week. (3:15–5 PM)');
+    add('love',     '❤️ Family time (8–8:30 PM)');
+  }
+  if (dow === 6) {
+    add('health',   '💪 Legs + Active Recovery: 30-min walk + full body stretch (10 AM)');
+    add('love',     '❤️ Family/Social time — connect with friends or family (3–5 PM)');
+    add('happiness','✨ Do one thing today that brings you pure joy');
+  }
+  if (dow === 0) {
+    add('happiness','📖 A-Level: light review — flashcards, concept maps, no heavy work (2–4 PM)');
+    add('money',    '💰 Weekly review: sales numbers, profit, leads, stock portfolio check (11 AM)');
+    add('love',     '📓 Weekly reflection journal: what did you learn about yourself this week?');
+    add('money',    '📋 Plan next week: set targets for all 4 categories');
+  }
+
+  // ── Week-specific ──
+  const ws = WEEK_SPECIFIC[weekNum]?.[dk] || [];
+  ws.forEach(t => add(t.cat, t.text));
+  return tasks;
+}
+
+function seedAllTasks() {
+  const all = {};
+  const d = new Date(PLAN_START);
+  while (d <= PLAN_END) {
+    const k = toKey(d);
+    all[k] = generateSeedTasks(new Date(d));
+    d.setDate(d.getDate() + 1);
+  }
+  return all;
+}
+
+/* ─────────────────────────────────────────────────────────────────
+   PROGRESS RING
+───────────────────────────────────────────────────────────────── */
+function ProgressRing({ pct, size=64, stroke=5, color='#f0c040' }) {
+  const r = (size - stroke * 2) / 2;
+  const c = 2 * Math.PI * r;
+  const off = c - (pct / 100) * c;
+  return (
+    <svg width={size} height={size} style={{transform:'rotate(-90deg)'}}>
+      <circle cx={size/2} cy={size/2} r={r} fill="none" stroke="rgba(255,255,255,0.06)" strokeWidth={stroke}/>
+      <circle cx={size/2} cy={size/2} r={r} fill="none" stroke={color} strokeWidth={stroke}
+        strokeDasharray={c} strokeDashoffset={off}
+        style={{transition:'stroke-dashoffset .7s cubic-bezier(.4,0,.2,1)', strokeLinecap:'round'}}/>
+    </svg>
+  );
+}
+
+/* ─────────────────────────────────────────────────────────────────
+   MINI BAR CHART (Overview)
+───────────────────────────────────────────────────────────────── */
+function MiniBar({ label, done, total, color }) {
+  const pct = total ? Math.round(done/total*100) : 0;
+  return (
+    <div style={{marginBottom:14}}>
+      <div style={{display:'flex',justifyContent:'space-between',alignItems:'center',marginBottom:6}}>
+        <span style={{fontSize:13,fontWeight:600,color}}>{label}</span>
+        <div style={{display:'flex',gap:12,alignItems:'center'}}>
+          <span style={{fontFamily:'DM Mono',fontSize:11,color:'rgba(255,255,255,0.3)'}}>{done}/{total}</span>
+          <span style={{fontFamily:'DM Mono',fontSize:12,color,fontWeight:500,minWidth:36,textAlign:'right'}}>{pct}%</span>
+        </div>
+      </div>
+      <div style={{height:5,background:'rgba(255,255,255,0.06)',borderRadius:100,overflow:'hidden'}}>
+        <div style={{height:'100%',width:`${pct}%`,background:`linear-gradient(90deg,${color}88,${color})`,
+          borderRadius:100,transition:'width .8s cubic-bezier(.4,0,.2,1)'}}/>
+      </div>
+    </div>
+  );
+}
+
+/* ─────────────────────────────────────────────────────────────────
+   APP
+───────────────────────────────────────────────────────────────── */
+export default function App() {
+  const [tasks,    setTasks]    = useState({});
+  const [loaded,   setLoaded]   = useState(false);
+  const [selDate,  setSelDate]  = useState(() => { const d=new Date(); d.setHours(0,0,0,0); return d; });
+  const [tab,      setTab]      = useState('today');
+  const [filterCat,setFilter]   = useState('all');
+  const [addCat,   setAddCat]   = useState(null);
+  const [newText,  setNewText]  = useState('');
+  const [toast,    setToast]    = useState(null);
+  const inputRef = useRef(null);
+
+  /* Load from localStorage */
+  useEffect(() => {
+    const raw = localStorage.getItem('ayush_tasks_v2');
+    const seeded = localStorage.getItem('ayush_seeded_v2');
+    if (seeded && raw) {
+      setTasks(JSON.parse(raw));
+    } else {
+      const seed = seedAllTasks();
+      const existing = raw ? JSON.parse(raw) : {};
+      // Merge: don't overwrite dates that already have tasks
+      const merged = { ...seed };
+      Object.keys(existing).forEach(k => { merged[k] = existing[k]; });
+      setTasks(merged);
+      localStorage.setItem('ayush_tasks_v2', JSON.stringify(merged));
+      localStorage.setItem('ayush_seeded_v2', '1');
+    }
+    setLoaded(true);
+  }, []);
+
+  const save = useCallback(t => {
+    setTasks(t);
+    localStorage.setItem('ayush_tasks_v2', JSON.stringify(t));
+  }, []);
+
+  const showToast = msg => { setToast(msg); setTimeout(()=>setToast(null), 2000); };
+
+  /* Streak */
+  const streak = useMemo(() => {
+    let s=0, d=new Date(today);
+    for (let i=0;i<91;i++) {
+      const k=toKey(d);
+      const ts=tasks[k]||[];
+      if (ts.length>0 && ts.every(t=>t.done)) s++;
+      else if (ts.length>0 && toKey(d)!==toKey(today)) break;
+      else if (ts.length===0 && toKey(d)!==toKey(today)) break;
+      d.setDate(d.getDate()-1);
+    }
+    return s;
+  }, [tasks]);
+
+  const dk = toKey(selDate);
+  const dayTasks = tasks[dk] || [];
+  const filtered = filterCat==='all' ? dayTasks : dayTasks.filter(t=>t.cat===filterCat);
+  const donePct  = dayTasks.length ? Math.round(dayTasks.filter(t=>t.done).length/dayTasks.length*100) : 0;
+  const isToday  = dk === toKey(today);
+  const inPlan   = selDate>=PLAN_START && selDate<=PLAN_END;
+
+  /* Week strip */
+  const weekDays = useMemo(() => {
+    const start = new Date(selDate);
+    start.setDate(selDate.getDate() - selDate.getDay());
+    return Array.from({length:7},(_,i) => { const d=new Date(start); d.setDate(start.getDate()+i); return d; });
+  }, [selDate]);
+
+  /* Overview stats */
+  const allFlat = useMemo(() => Object.values(tasks).flat(), [tasks]);
+  const last7 = useMemo(() => Array.from({length:7},(_,i)=>{
+    const d=new Date(today); d.setDate(today.getDate()-(6-i));
+    const k=toKey(d); const ts=tasks[k]||[];
+    return {date:d,key:k,total:ts.length,done:ts.filter(t=>t.done).length};
+  }), [tasks]);
+
+  const toggleTask = id => {
+    const updated = {...tasks,[dk]:dayTasks.map(t=>t.id===id?{...t,done:!t.done}:t)};
+    save(updated);
+  };
+  const deleteTask = id => {
+    save({...tasks,[dk]:dayTasks.filter(t=>t.id!==id)});
+    showToast('Task removed');
+  };
+  const addTask = () => {
+    if (!newText.trim()||!addCat) return;
+    const t = {id:`u-${Date.now()}`,text:newText.trim(),cat:addCat,done:false};
+    save({...tasks,[dk]:[...dayTasks,t]});
+    setNewText(''); setAddCat(null);
+    showToast('Task added ✓');
+  };
+
+  useEffect(()=>{ if(addCat&&inputRef.current) inputRef.current.focus(); },[addCat]);
+
+  const formatDate = d => `${DAYS[d.getDay()]}, ${MONTHS[d.getMonth()]} ${d.getDate()}`;
+
+  if (!loaded) return (
+    <div style={{height:'100vh',display:'flex',alignItems:'center',justifyContent:'center',flexDirection:'column',gap:12}}>
+      <div style={{fontFamily:'Cormorant Garamond,serif',fontSize:28,color:'var(--gold)',fontStyle:'italic'}}>Ayush</div>
+      <div style={{fontFamily:'DM Mono,monospace',fontSize:11,color:'var(--muted)',letterSpacing:3,textTransform:'uppercase',animation:'pulse2 1.5s ease infinite'}}>Loading…</div>
+    </div>
+  );
+
+  /* ── WEEK NUMBER BADGE ── */
+  const wn = getWeekNum(selDate);
+  const WEEK_LABELS = {1:'Launch',2:'Consistency',3:'Depth',4:'Review',5:'Elevation',6:'Skill Mastery',7:'Pressure',8:'Momentum Check',9:'Peak Week',10:'Exam Week',11:'Harvest',12:'Legacy',13:'Completion'};
+
+  return (
+    <div style={{minHeight:'100vh',background:'var(--bg)',display:'flex',flexDirection:'column'}}>
+
+      {/* Ambient glow */}
+      <div style={{position:'fixed',inset:0,pointerEvents:'none',zIndex:0,overflow:'hidden'}}>
+        <div style={{position:'absolute',top:-300,right:-200,width:700,height:700,background:'radial-gradient(circle,rgba(240,192,64,0.04) 0%,transparent 65%)'}}/>
+        <div style={{position:'absolute',bottom:-300,left:-200,width:600,height:600,background:'radial-gradient(circle,rgba(56,189,248,0.03) 0%,transparent 65%)'}}/>
+      </div>
+
+      {/* ── HEADER ── */}
+      <header style={{position:'sticky',top:0,zIndex:100,background:'rgba(8,8,16,0.9)',backdropFilter:'blur(24px)',
+        borderBottom:'1px solid var(--border)',height:60,display:'flex',alignItems:'center',
+        justifyContent:'space-between',padding:'0 28px',gap:16}}>
+
+        <div style={{display:'flex',alignItems:'baseline',gap:8,flexShrink:0}}>
+          <span style={{fontFamily:'Cormorant Garamond,serif',fontSize:24,fontWeight:600,color:'var(--gold)',fontStyle:'italic'}}>Ayush</span>
+          <span style={{fontFamily:'DM Mono,monospace',fontSize:10,color:'var(--muted)',letterSpacing:3,textTransform:'uppercase'}}>Tracker</span>
+        </div>
+
+        <nav style={{display:'flex',gap:2}}>
+          {['today','overview','plan'].map(t=>(
+            <button key={t} onClick={()=>setTab(t)} style={{background:'none',border:'none',padding:'7px 16px',borderRadius:8,
+              fontFamily:'Syne,sans-serif',fontSize:11,letterSpacing:1.5,textTransform:'uppercase',fontWeight:700,
+              color:tab===t?'var(--gold)':'var(--muted)',
+              background:tab===t?'rgba(240,192,64,0.08)':'transparent',
+              borderBottom:tab===t?'1px solid rgba(240,192,64,0.45)':'1px solid transparent',
+              transition:'all .2s',cursor:'pointer'}}>{t}</button>
+          ))}
+        </nav>
+
+        <div style={{display:'flex',alignItems:'center',gap:10,flexShrink:0}}>
+          <span style={{fontFamily:'DM Mono,monospace',fontSize:11,color:'var(--muted)'}}>
+            {MONTHS[today.getMonth()].slice(0,3)} {today.getDate()}, {today.getFullYear()}
+          </span>
+          {streak>0&&(
+            <div style={{background:'rgba(240,192,64,0.1)',border:'1px solid rgba(240,192,64,0.2)',
+              borderRadius:100,padding:'3px 11px',display:'flex',alignItems:'center',gap:5}}>
+              <span style={{fontSize:13}}>🔥</span>
+              <span style={{fontFamily:'DM Mono,monospace',fontSize:11,color:'var(--gold)',fontWeight:500}}>{streak}d</span>
+            </div>
+          )}
+        </div>
+      </header>
+
+      <main style={{flex:1,maxWidth:960,margin:'0 auto',width:'100%',padding:'28px 20px 80px',position:'relative',zIndex:1}}>
+
+        {/* ══════════════════════════════════════════════
+            TODAY TAB
+        ══════════════════════════════════════════════ */}
+        {tab==='today'&&(
+          <div className="fade-in">
+
+            {/* Week Strip */}
+            <div style={{display:'flex',gap:5,marginBottom:24,overflowX:'auto',paddingBottom:2}}>
+              {weekDays.map((d,i)=>{
+                const k=toKey(d); const isSel=k===dk; const isTod=k===toKey(today);
+                const ts=tasks[k]||[]; const allDone=ts.length>0&&ts.every(t=>t.done);
+                return (
+                  <div key={i} onClick={()=>setSelDate(new Date(d))}
+                    style={{cursor:'pointer',padding:'9px 12px',borderRadius:11,textAlign:'center',minWidth:48,flexShrink:0,
+                      border:isSel?'1px solid rgba(240,192,64,0.5)':'1px solid var(--border)',
+                      background:isSel?'rgba(240,192,64,0.07)':'rgba(255,255,255,0.015)',transition:'all .2s'}}>
+                    <div style={{fontFamily:'DM Mono,monospace',fontSize:9,letterSpacing:1,textTransform:'uppercase',
+                      color:isSel?'var(--gold)':'var(--muted)',marginBottom:3}}>{DAYS[d.getDay()]}</div>
+                    <div style={{fontFamily:'Syne,sans-serif',fontWeight:700,fontSize:15,
+                      color:isSel?'var(--gold)':isTod?'#fff':'rgba(255,255,255,0.5)'}}>{d.getDate()}</div>
+                    <div style={{width:4,height:4,borderRadius:'50%',margin:'4px auto 0',
+                      background:allDone?'var(--health)':ts.length>0?'rgba(240,192,64,0.6)':'transparent'}}/>
+                  </div>
+                );
+              })}
+            </div>
+
+            {/* Date Header */}
+            <div style={{display:'flex',alignItems:'center',justifyContent:'space-between',
+              marginBottom:22,padding:'18px 22px',background:'rgba(255,255,255,0.02)',
+              border:'1px solid var(--border)',borderRadius:14,gap:12}}>
+              <div style={{flex:1,minWidth:0}}>
+                <div style={{display:'flex',alignItems:'center',gap:10,flexWrap:'wrap',marginBottom:4}}>
+                  <span style={{fontFamily:'Cormorant Garamond,serif',fontSize:30,fontWeight:400,color:'#fff',lineHeight:1,
+                    fontStyle:isToday?'normal':'italic'}}>{formatDate(selDate)}</span>
+                  {isToday&&<span style={{fontFamily:'DM Mono,monospace',fontSize:10,color:'var(--gold)',
+                    background:'rgba(240,192,64,0.1)',border:'1px solid rgba(240,192,64,0.2)',
+                    padding:'2px 9px',borderRadius:100,letterSpacing:1}}>today</span>}
+                  {wn&&<span style={{fontFamily:'DM Mono,monospace',fontSize:10,color:'var(--muted)',
+                    background:'var(--bg3)',border:'1px solid var(--border)',
+                    padding:'2px 9px',borderRadius:100,letterSpacing:0.5}}>W{wn} · {WEEK_LABELS[wn]}</span>}
+                </div>
+                <div style={{fontFamily:'DM Mono,monospace',fontSize:11,color:'var(--muted)'}}>
+                  {dayTasks.filter(t=>t.done).length} of {dayTasks.length} tasks complete
+                  {!inPlan&&<span style={{marginLeft:8,color:'rgba(251,191,36,0.5)'}}>· outside plan period</span>}
+                </div>
+              </div>
+              <div style={{position:'relative',width:60,height:60,flexShrink:0}}>
+                <ProgressRing pct={donePct} size={60} stroke={4} color={donePct===100?'#4ade80':'var(--gold)'}/>
+                <div style={{position:'absolute',inset:0,display:'flex',alignItems:'center',justifyContent:'center',
+                  fontFamily:'DM Mono,monospace',fontSize:11,
+                  color:donePct===100?'var(--health)':'var(--gold)',fontWeight:500}}>{donePct}%</div>
+              </div>
+            </div>
+
+            {/* Category Filter */}
+            <div style={{display:'flex',gap:6,marginBottom:20,flexWrap:'wrap'}}>
+              {['all',...CATEGORIES.map(c=>c.id)].map(id=>{
+                const cat=CAT_MAP[id]; const isAll=id==='all';
+                return (
+                  <button key={id} onClick={()=>setFilter(id)}
+                    style={{border:'1px solid',borderRadius:100,padding:'5px 14px',background:'none',
+                      fontFamily:'Syne,sans-serif',fontSize:10,letterSpacing:1.5,fontWeight:700,textTransform:'uppercase',
+                      transition:'all .2s',cursor:'pointer',
+                      borderColor:filterCat===id?(isAll?'var(--gold)':cat.color):'rgba(255,255,255,0.1)',
+                      color:filterCat===id?(isAll?'var(--gold)':cat.color):'var(--muted)'}}>
+                    {isAll?'All':`${cat.emoji} ${cat.label}`}
+                  </button>
+                );
+              })}
+            </div>
+
+            {/* Task List */}
+            <div style={{display:'flex',flexDirection:'column',gap:7,marginBottom:30,minHeight:120}}>
+              {filtered.length===0&&(
+                <div style={{textAlign:'center',padding:'44px 0',
+                  fontFamily:'Cormorant Garamond,serif',fontSize:18,color:'rgba(255,255,255,0.12)',fontStyle:'italic'}}>
+                  {dayTasks.length===0
+                    ? inPlan?'Tasks loading for this date…':'No tasks — add one below ↓'
+                    : 'No tasks in this category'}
+                </div>
+              )}
+              {filtered.map((task,i)=>{
+                const cat = CAT_MAP[task.cat]||CATEGORIES[0];
+                return (
+                  <div key={task.id} className="fade-up"
+                    style={{animationDelay:`${i*0.02}s`,display:'flex',alignItems:'center',gap:12,
+                      padding:'13px 16px',borderRadius:11,transition:'all .2s',position:'relative',
+                      border:`1px solid ${task.done?'rgba(255,255,255,0.05)':cat.border}`,
+                      background:task.done?'rgba(255,255,255,0.015)':'rgba(255,255,255,0.025)'}}>
+
+                    {/* Checkbox */}
+                    <div onClick={()=>toggleTask(task.id)}
+                      style={{width:20,height:20,borderRadius:5,border:'1.5px solid',flexShrink:0,cursor:'pointer',
+                        display:'flex',alignItems:'center',justifyContent:'center',transition:'all .2s',
+                        borderColor:task.done?cat.color:'rgba(255,255,255,0.18)',
+                        background:task.done?cat.bg:'transparent'}}>
+                      {task.done&&<svg width="10" height="8" viewBox="0 0 10 8" fill="none">
+                        <path d="M1 4L3.5 6.5L9 1" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round" style={{color:cat.color}}/>
+                      </svg>}
+                    </div>
+
+                    {/* Category dot */}
+                    <div style={{width:7,height:7,borderRadius:'50%',background:cat.color,flexShrink:0,opacity:.75}}/>
+
+                    {/* Text */}
+                    <span style={{flex:1,fontFamily:'Syne,sans-serif',fontSize:13,fontWeight:500,lineHeight:1.45,
+                      color:task.done?'rgba(255,255,255,0.22)':'rgba(255,255,255,0.82)',
+                      textDecoration:task.done?'line-through':'none',transition:'all .2s'}}>{task.text}</span>
+
+                    {/* Cat label (desktop) */}
+                    <span style={{fontFamily:'DM Mono,monospace',fontSize:9,letterSpacing:1,
+                      color:cat.color,opacity:.6,textTransform:'uppercase',flexShrink:0,
+                      display:'none',/* hidden on small */}}>
+                      {cat.label}
+                    </span>
+
+                    {/* Delete */}
+                    <button onClick={()=>deleteTask(task.id)}
+                      style={{opacity:0,background:'none',border:'none',color:'rgba(255,255,255,0.2)',
+                        fontSize:17,lineHeight:1,padding:'2px 5px',flexShrink:0,transition:'opacity .2s',cursor:'pointer',
+                        ':hover':{opacity:1}}}
+                      onMouseEnter={e=>e.target.style.opacity=1}
+                      onMouseLeave={e=>e.target.style.opacity=0}>×</button>
+                  </div>
+                );
+              })}
+            </div>
+
+            {/* Add Task */}
+            <div style={{borderTop:'1px solid var(--border)',paddingTop:24}}>
+              <div style={{fontFamily:'DM Mono,monospace',fontSize:10,letterSpacing:2,textTransform:'uppercase',
+                color:'var(--muted)',marginBottom:12,fontWeight:500}}>Add Custom Task</div>
+              <div style={{display:'flex',gap:8,marginBottom:12,flexWrap:'wrap'}}>
+                {CATEGORIES.map(c=>(
+                  <button key={c.id} onClick={()=>setAddCat(addCat===c.id?null:c.id)}
+                    style={{padding:'9px 18px',borderRadius:9,border:'1px solid',transition:'all .2s',
+                      fontFamily:'Syne,sans-serif',fontSize:11,fontWeight:700,letterSpacing:.5,cursor:'pointer',
+                      borderColor:addCat===c.id?c.color:'rgba(255,255,255,0.08)',
+                      background:addCat===c.id?c.bg:'rgba(255,255,255,0.015)',
+                      color:addCat===c.id?c.color:'var(--muted)'}}>
+                    {c.emoji} {c.label}
+                  </button>
+                ))}
+              </div>
+              {addCat&&(()=>{
+                const cat=CAT_MAP[addCat];
+                return (
+                  <div style={{display:'flex',gap:8,animation:'fadeUp .2s ease'}}>
+                    <input ref={inputRef} value={newText} onChange={e=>setNewText(e.target.value)}
+                      onKeyDown={e=>e.key==='Enter'&&addTask()}
+                      placeholder={`Add ${cat.label.toLowerCase()} task…`}
+                      style={{flex:1,background:'rgba(255,255,255,0.04)',border:`1px solid ${cat.border}`,
+                        borderRadius:9,padding:'11px 16px',fontFamily:'Syne,sans-serif',fontSize:13,
+                        color:'#fff',outline:'none','::placeholder':{color:'rgba(255,255,255,0.25)'}}}/>
+                    <button onClick={addTask}
+                      style={{padding:'11px 22px',borderRadius:9,background:cat.bg,border:`1px solid ${cat.border}`,
+                        color:cat.color,fontFamily:'Syne,sans-serif',fontSize:12,fontWeight:700,
+                        letterSpacing:.5,cursor:'pointer',whiteSpace:'nowrap',transition:'all .2s'}}>
+                      Add →
+                    </button>
+                  </div>
+                );
+              })()}
+            </div>
+          </div>
+        )}
+
+        {/* ══════════════════════════════════════════════
+            OVERVIEW TAB
+        ══════════════════════════════════════════════ */}
+        {tab==='overview'&&(
+          <div className="fade-in">
+            <h1 style={{fontFamily:'Cormorant Garamond,serif',fontSize:38,fontWeight:300,color:'#fff',marginBottom:4,letterSpacing:'-.5px'}}>
+              Overview
+            </h1>
+            <p style={{fontFamily:'DM Mono,monospace',fontSize:11,color:'var(--muted)',marginBottom:28,letterSpacing:.5}}>
+              Your 90-day transformation progress
+            </p>
+
+            {/* Stat Cards */}
+            <div style={{display:'grid',gridTemplateColumns:'repeat(4,1fr)',gap:12,marginBottom:24}}>
+              {[
+                {label:'Total Tasks',  val:allFlat.length,                                                     icon:'📋', color:'var(--text)'},
+                {label:'Completed',    val:allFlat.filter(t=>t.done).length,                                    icon:'✅', color:'var(--health)'},
+                {label:'Rate',         val:`${allFlat.length?Math.round(allFlat.filter(t=>t.done).length/allFlat.length*100):0}%`, icon:'📊', color:'var(--gold)'},
+                {label:'Streak',       val:`${streak}d`,                                                        icon:'🔥', color:'#fb923c'},
+              ].map((s,i)=>(
+                <div key={i} style={{background:'rgba(255,255,255,0.02)',border:'1px solid var(--border)',
+                  borderRadius:13,padding:'18px 14px',textAlign:'center'}}>
+                  <div style={{fontSize:22,marginBottom:6}}>{s.icon}</div>
+                  <div style={{fontFamily:'Cormorant Garamond,serif',fontSize:28,fontWeight:500,color:s.color,lineHeight:1,marginBottom:3}}>{s.val}</div>
+                  <div style={{fontFamily:'DM Mono,monospace',fontSize:9,color:'var(--muted)',letterSpacing:1,textTransform:'uppercase'}}>{s.label}</div>
+                </div>
+              ))}
+            </div>
+
+            {/* Category Breakdown */}
+            <div style={{background:'rgba(255,255,255,0.02)',border:'1px solid var(--border)',
+              borderRadius:14,padding:'22px',marginBottom:16}}>
+              <div style={{fontFamily:'DM Mono,monospace',fontSize:10,letterSpacing:2,textTransform:'uppercase',
+                color:'var(--muted)',marginBottom:18,fontWeight:500}}>Category Progress</div>
+              {CATEGORIES.map(c=>{
+                const ts=allFlat.filter(t=>t.cat===c.id);
+                return <MiniBar key={c.id} label={`${c.emoji} ${c.label}`} done={ts.filter(t=>t.done).length} total={ts.length} color={c.color}/>;
+              })}
+            </div>
+
+            {/* 7-Day Chart */}
+            <div style={{background:'rgba(255,255,255,0.02)',border:'1px solid var(--border)',
+              borderRadius:14,padding:'22px',marginBottom:16}}>
+              <div style={{fontFamily:'DM Mono,monospace',fontSize:10,letterSpacing:2,textTransform:'uppercase',
+                color:'var(--muted)',marginBottom:18,fontWeight:500}}>Last 7 Days</div>
+              <div style={{display:'flex',gap:10,alignItems:'flex-end',height:110}}>
+                {last7.map((d,i)=>{
+                  const isTod=d.key===toKey(today);
+                  const pct=d.total?d.done/d.total:0;
+                  const h=Math.max(d.total?pct*90:4,4);
+                  return (
+                    <div key={i} style={{flex:1,display:'flex',flexDirection:'column',alignItems:'center',gap:5,cursor:'pointer'}}
+                      onClick={()=>{setSelDate(new Date(d.date));setTab('today');}}>
+                      <span style={{fontFamily:'DM Mono,monospace',fontSize:9,color:isTod?'var(--gold)':'var(--muted)'}}>{d.done}</span>
+                      <div style={{width:'100%',height:90,display:'flex',alignItems:'flex-end',
+                        borderRadius:6,overflow:'hidden',background:'rgba(255,255,255,0.04)'}}>
+                        <div style={{width:'100%',height:`${h}px`,
+                          background:isTod?'linear-gradient(180deg,#f0c040,#c89820)':
+                            pct===1?'linear-gradient(180deg,#4ade80,#22c55e)':
+                            'linear-gradient(180deg,rgba(240,192,64,.45),rgba(240,192,64,.2))',
+                          borderRadius:'4px 4px 0 0',transition:'height .7s ease'}}/>
+                      </div>
+                      <span style={{fontFamily:'DM Mono,monospace',fontSize:9,
+                        color:isTod?'var(--gold)':'var(--muted)',letterSpacing:.5}}>{DAYS[d.date.getDay()]}</span>
+                    </div>
+                  );
+                })}
+              </div>
+            </div>
+
+            {/* Category daily task count today */}
+            <div style={{background:'rgba(255,255,255,0.02)',border:'1px solid var(--border)',
+              borderRadius:14,padding:'22px'}}>
+              <div style={{fontFamily:'DM Mono,monospace',fontSize:10,letterSpacing:2,textTransform:'uppercase',
+                color:'var(--muted)',marginBottom:18,fontWeight:500}}>Today's Breakdown</div>
+              <div style={{display:'grid',gridTemplateColumns:'1fr 1fr',gap:10}}>
+                {CATEGORIES.map(c=>{
+                  const todayKey=toKey(today);
+                  const todTs=(tasks[todayKey]||[]).filter(t=>t.cat===c.id);
+                  const pct=todTs.length?Math.round(todTs.filter(t=>t.done).length/todTs.length*100):0;
+                  return (
+                    <div key={c.id} style={{background:c.bg,border:`1px solid ${c.border}`,borderRadius:10,padding:'14px'}}>
+                      <div style={{display:'flex',justifyContent:'space-between',alignItems:'center',marginBottom:8}}>
+                        <span style={{fontFamily:'Syne,sans-serif',fontSize:12,fontWeight:700,color:c.color}}>{c.emoji} {c.label}</span>
+                        <span style={{fontFamily:'DM Mono,monospace',fontSize:11,color:c.color,fontWeight:500}}>{pct}%</span>
+                      </div>
+                      <div style={{fontFamily:'DM Mono,monospace',fontSize:10,color:'rgba(255,255,255,0.35)'}}>
+                        {todTs.filter(t=>t.done).length}/{todTs.length} tasks done
+                      </div>
+                    </div>
+                  );
+                })}
+              </div>
+            </div>
+          </div>
+        )}
+
+        {/* ══════════════════════════════════════════════
+            PLAN TAB
+        ══════════════════════════════════════════════ */}
+        {tab==='plan'&&(
+          <div className="fade-in">
+            <h1 style={{fontFamily:'Cormorant Garamond,serif',fontSize:38,fontWeight:300,color:'#fff',marginBottom:4}}>
+              3-Month Plan
+            </h1>
+            <p style={{fontFamily:'DM Mono,monospace',fontSize:11,color:'var(--muted)',marginBottom:28,letterSpacing:.5}}>
+              March 9 → June 8, 2026 · Click a week to jump to it
+            </p>
+
+            {[
+              {phase:'Month 1 — Foundation', range:'Mar 9 → Apr 5', color:'var(--health)',
+               weeks:[
+                {n:1,label:'Launch',       focus:'Begin every habit on Day 1. No easing in.',          range:'Mar 9–15'},
+                {n:2,label:'Consistency',  focus:'Show up even when you don\'t want to.',               range:'Mar 16–22'},
+                {n:3,label:'Depth',        focus:'Sugar-free week. Go harder in every area.',           range:'Mar 23–29'},
+                {n:4,label:'Review',       focus:'Measure everything. Celebrate Month 1 completion.',   range:'Mar 30–Apr 5'},
+               ]},
+              {phase:'Month 2 — Momentum', range:'Apr 6 → May 3', color:'var(--happy)',
+               weeks:[
+                {n:5,label:'Elevation',    focus:'Level up every system. First AI client.',             range:'Apr 6–12'},
+                {n:6,label:'Skill Mastery',focus:'Deload. Master guitar, A-Level exam technique.',      range:'Apr 13–19'},
+                {n:7,label:'Pressure',     focus:'Perform under stress like an athlete.',               range:'Apr 20–26'},
+                {n:8,label:'Momentum Check',focus:'Two months done. Measure. Prepare for final push.',  range:'Apr 27–May 3'},
+               ]},
+              {phase:'Month 3 — Acceleration', range:'May 4 → Jun 8', color:'var(--money)',
+               weeks:[
+                {n:9, label:'Peak Week',    focus:'Your best 7 days. No more warming up. Drop sets.',   range:'May 4–10'},
+                {n:10,label:'Exam Week',    focus:'Perform when it counts. Trust your preparation.',    range:'May 11–17'},
+                {n:11,label:'Harvest',      focus:'Collect everything you\'ve planted. 400 sales push.',range:'May 18–24'},
+                {n:12,label:'Legacy',       focus:'What did 3 months build? Integrate everything.',     range:'May 25–31'},
+                {n:13,label:'Completion',   focus:'You are unrecognizable from March 9. That was the goal.',range:'Jun 1–8'},
+               ]},
+            ].map(month=>(
+              <div key={month.phase} style={{marginBottom:28}}>
+                <div style={{display:'flex',alignItems:'center',gap:12,marginBottom:14}}>
+                  <div style={{width:3,height:28,background:month.color,borderRadius:100}}/>
+                  <div>
+                    <div style={{fontFamily:'Syne,sans-serif',fontSize:16,fontWeight:700,color:'#fff'}}>{month.phase}</div>
+                    <div style={{fontFamily:'DM Mono,monospace',fontSize:10,color:'var(--muted)',letterSpacing:.5}}>{month.range}</div>
+                  </div>
+                </div>
+                <div style={{display:'flex',flexDirection:'column',gap:8,paddingLeft:15}}>
+                  {month.weeks.map(week=>{
+                    const weekStart=new Date(PLAN_START);
+                    weekStart.setDate(PLAN_START.getDate()+(week.n-1)*7);
+                    const wTasks=Object.entries(tasks).filter(([k])=>{
+                      const d=new Date(k); return getWeekNum(d)===week.n;
+                    }).flatMap(([,ts])=>ts);
+                    const wDone=wTasks.filter(t=>t.done).length;
+                    const wPct=wTasks.length?Math.round(wDone/wTasks.length*100):0;
+                    const isCurrent=getWeekNum(today)===week.n;
+                    return (
+                      <div key={week.n}
+                        onClick={()=>{setSelDate(new Date(weekStart));setTab('today');}}
+                        style={{padding:'14px 16px',borderRadius:11,cursor:'pointer',transition:'all .2s',
+                          border:`1px solid ${isCurrent?month.color:'rgba(255,255,255,0.07)'}`,
+                          background:isCurrent?`${month.color}08`:'rgba(255,255,255,0.015)'}}>
+                        <div style={{display:'flex',alignItems:'center',justifyContent:'space-between',gap:12}}>
+                          <div style={{display:'flex',alignItems:'center',gap:10,flex:1,minWidth:0}}>
+                            <span style={{fontFamily:'DM Mono,monospace',fontSize:11,
+                              color:isCurrent?month.color:'var(--muted)',fontWeight:500,flexShrink:0}}>W{week.n}</span>
+                            <div style={{minWidth:0}}>
+                              <div style={{fontFamily:'Syne,sans-serif',fontSize:13,fontWeight:600,
+                                color:isCurrent?'#fff':'rgba(255,255,255,0.7)',marginBottom:1}}>
+                                {week.label}
+                                {isCurrent&&<span style={{fontFamily:'DM Mono,monospace',fontSize:9,
+                                  color:month.color,background:`${month.color}18`,border:`1px solid ${month.color}44`,
+                                  padding:'1px 7px',borderRadius:100,marginLeft:8,letterSpacing:1}}>current</span>}
+                              </div>
+                              <div style={{fontFamily:'DM Mono,monospace',fontSize:10,color:'var(--muted)',
+                                letterSpacing:.3,whiteSpace:'nowrap',overflow:'hidden',textOverflow:'ellipsis'}}>
+                                {week.range} · {week.focus}
+                              </div>
+                            </div>
+                          </div>
+                          <div style={{display:'flex',alignItems:'center',gap:8,flexShrink:0}}>
+                            {wTasks.length>0&&(
+                              <div style={{width:48,height:4,background:'rgba(255,255,255,0.06)',borderRadius:100,overflow:'hidden'}}>
+                                <div style={{height:'100%',width:`${wPct}%`,background:month.color,borderRadius:100,transition:'width .6s ease'}}/>
+                              </div>
+                            )}
+                            <span style={{fontFamily:'DM Mono,monospace',fontSize:10,
+                              color:wPct===100?'var(--health)':isCurrent?month.color:'var(--muted)',minWidth:30,textAlign:'right'}}>
+                              {wTasks.length>0?`${wPct}%`:'—'}
+                            </span>
+                            <span style={{color:'var(--muted)',fontSize:12}}>→</span>
+                          </div>
+                        </div>
+                      </div>
+                    );
+                  })}
+                </div>
+              </div>
+            ))}
+
+            {/* Goals Summary */}
+            <div style={{borderTop:'1px solid var(--border)',paddingTop:24,marginTop:8}}>
+              <div style={{fontFamily:'DM Mono,monospace',fontSize:10,letterSpacing:2,textTransform:'uppercase',
+                color:'var(--muted)',marginBottom:16,fontWeight:500}}>End Goals — June 8, 2026</div>
+              <div style={{display:'grid',gridTemplateColumns:'1fr 1fr',gap:10}}>
+                {[
+                  {cat:'health',   goals:['10% body fat reduction','Visible upper body gains','Sleep 10:30 PM permanent','Sugar-free most days']},
+                  {cat:'love',     goals:['3 songs on guitar','Active listening mastery','Deeper family connections','Daily journal habit']},
+                  {cat:'happiness',goals:['A-Level exams passed','University accepted','Shanghai trip completed','Win List filled']},
+                  {cat:'money',    goals:['10M MNT monthly profit','1,000+ total sales','3+ AI workflow clients','Stock portfolio active']},
+                ].map(g=>{
+                  const cat=CAT_MAP[g.cat];
+                  return (
+                    <div key={g.cat} style={{background:cat.bg,border:`1px solid ${cat.border}`,borderRadius:11,padding:'14px'}}>
+                      <div style={{fontFamily:'Syne,sans-serif',fontSize:12,fontWeight:700,color:cat.color,marginBottom:9}}>
+                        {cat.emoji} {cat.label}
+                      </div>
+                      {g.goals.map((goal,i)=>(
+                        <div key={i} style={{fontFamily:'Syne,sans-serif',fontSize:11,color:'rgba(255,255,255,0.55)',
+                          padding:'2.5px 0',borderBottom:i<g.goals.length-1?'1px solid rgba(255,255,255,0.05)':'none',
+                          display:'flex',alignItems:'center',gap:7}}>
+                          <span style={{color:cat.color,fontSize:9,flexShrink:0}}>▸</span>{goal}
+                        </div>
+                      ))}
+                    </div>
+                  );
+                })}
+              </div>
+            </div>
+          </div>
+        )}
+      </main>
+
+      {/* Toast */}
+      {toast&&(
+        <div style={{position:'fixed',bottom:28,left:'50%',transform:'translateX(-50%)',
+          background:'rgba(14,14,26,0.96)',backdropFilter:'blur(20px)',
+          border:'1px solid rgba(240,192,64,0.28)',borderRadius:100,padding:'9px 22px',
+          fontFamily:'Syne,sans-serif',fontSize:12,color:'var(--gold)',fontWeight:700,letterSpacing:.5,
+          boxShadow:'0 8px 28px rgba(0,0,0,.5)',zIndex:999,animation:'toastIn .3s ease'}}>
+          {toast}
+        </div>
+      )}
+    </div>
+  );
+}
+
+ReactDOM.createRoot(document.getElementById('root')).render(<App/>);
+</script>
+</body>
+</html>
